@@ -371,11 +371,21 @@ void TestExcludeStopWordsFromAddedDocumentContent() {
 Разместите код остальных тестов здесь
 */
 bool operator==(const Document& lhs, const Document& rhs) {
-    return lhs.id == rhs.id && lhs.rating == rhs.rating && abs(lhs.relevance - rhs.relevance) < 1e-6;
+    const double epsilon = 1e-6;
+    return lhs.id == rhs.id && lhs.rating == rhs.rating && abs(lhs.relevance - rhs.relevance) < epsilon;
 }
 
 ostream& operator<<(ostream& os, const Document& doc) {
     os << doc.id << ' ' << doc.relevance << ' ' << doc.rating;
+    return os;
+}
+
+ostream& operator<<(ostream& os, const DocumentStatus& status) {
+    if (status == DocumentStatus::ACTUAL) os << "ACTUAL"s;
+    else if (status == DocumentStatus::BANNED) os << "BANNED"s;
+    else if (status == DocumentStatus::IRRELEVANT) os << "IRRELEVANT"s;
+    else if (status == DocumentStatus::REMOVED) os << "REMOVED"s;
+    else os << "Unknown status"s;
     return os;
 }
 
@@ -388,26 +398,12 @@ void TestCountDocument() {
     const string content = "cat"s;
     const vector<int> ratings = { 2, 2 };
     SearchServer server;
+    int count_documents = 0;
     for (int id = 1; id <= 10; ++id) {
         server.AddDocument(id, content, DocumentStatus::ACTUAL, ratings);
-        ASSERT(server.GetDocumentCount() == id);
+        ++count_documents;
+        ASSERT(server.GetDocumentCount() == count_documents);
     }
-}
-
-void TestFindTopDocumentsRatingSorting() {
-    const string content = "cat"s;
-    vector<int> ratings = { 1 };
-    SearchServer server;
-    for (int id = 0; id < 5; ++id) {
-        server.AddDocument(id, content, DocumentStatus::ACTUAL, ratings);
-        ratings[0] += 1;
-    }
-    vector<Document> expected = { {4, 0.0, 5}, {3, 0.0, 4}, {2, 0.0, 3}, {1, 0.0, 2}, {0, 0.0, 1} };
-    ASSERT(server.FindTopDocuments("dog"s).empty());
-    ASSERT_EQUAL(server.FindTopDocuments("cat"s), expected);
-    server.AddDocument(5, content, DocumentStatus::ACTUAL, ratings);
-    expected = { {5, 0.0, 6}, {4, 0.0, 5}, {3, 0.0, 4}, {2, 0.0, 3}, {1, 0.0, 2} };
-    ASSERT_EQUAL(server.FindTopDocuments("cat"s), expected);
 }
 
 void TestFindTopDocumentsRelevanseSorting() {
@@ -415,16 +411,24 @@ void TestFindTopDocumentsRelevanseSorting() {
     server.AddDocument(0, "cat dog"s, DocumentStatus::ACTUAL, { 1 });
     server.AddDocument(1, "dog"s, DocumentStatus::ACTUAL, { 1 });
     server.AddDocument(2, "snake map snake"s, DocumentStatus::ACTUAL, { 1 });
+
+    //one word found in a document consisting of one word
     vector<Document> expected = { { 0, (log(3) * 1.0 / 2), 1 } };
     ASSERT_EQUAL(server.FindTopDocuments("cat"s), expected);
+
+    //a test for finding a word that is contained in several documents
     expected = { {1, log(3.0 / 2), 1}, {0, (log(3.0 / 2) * 1.0 / 2), 1} };
     ASSERT_EQUAL(server.FindTopDocuments("dog"s), expected);
+
+    //the word is found twice in a three-word document
     expected = { {2, (log(3) * 2.0 / 3), 1} };
     ASSERT_EQUAL(server.FindTopDocuments("snake"s), expected);
-    expected = { {2, (log(3) * 1.0 / 3), 1} };
-    ASSERT_EQUAL(server.FindTopDocuments("map"s), expected);
+
+    //multiple-word query
     expected = { {0, (log(3) * 1.0 / 2 + log(3.0 / 2) * 1.0 / 2), 1}, {2, (log(3) * 2.0 / 3), 1}, {1, (log(3.0 / 2)), 1} };
     ASSERT_EQUAL(server.FindTopDocuments("cat dog snake"s), expected);
+
+    //checking that with different relevance and rating, the sorting will be by relevance
     SearchServer server2;
     server2.AddDocument(0, "cat dog"s, DocumentStatus::ACTUAL, { 1 });
     server2.AddDocument(1, "dog"s, DocumentStatus::ACTUAL, { 2 });
@@ -473,62 +477,80 @@ void TestMatchingDocuments() {
     server.AddDocument(doc_id, content, DocumentStatus::ACTUAL, ratings);
     {
         auto [words, status] = server.MatchDocument("cat city dog"s, 42);
-        vector<string> expected = { "cat"s, "city"s };
-        ASSERT_EQUAL(words, expected);
+        vector<string> expected_words = { "cat"s, "city"s };
+        DocumentStatus expected_status = DocumentStatus::ACTUAL;
+        ASSERT_EQUAL(words, expected_words);
+        ASSERT_EQUAL(status, expected_status);
     }
     {
         auto [words, status] = server.MatchDocument("-cat city dog"s, 42);
+        DocumentStatus expected_status = DocumentStatus::ACTUAL;
         ASSERT(words.empty());
+        ASSERT_EQUAL(status, expected_status);
     }
 }
 
 void TestCalculatingRating() {
     const string content = "cat in the city"s;
     const int doc_id = 42;
-    const vector<int> ratings = { 2, 2, 8, 12 };
+    vector<int> ratings = { 2, 2, 8, 12 };
     SearchServer server;
+    auto AverageRating = [](const vector<int>& ratings) {
+        int result = 0;
+        if (ratings.empty())return result;
+        for (const int i : ratings) result += i;
+        result /= static_cast<int>(ratings.size());
+        return result;
+    };
     server.AddDocument(doc_id, content, DocumentStatus::ACTUAL, ratings);
     auto documents = server.FindTopDocuments("cat"s);
-    ASSERT_EQUAL(documents[0].rating, 6);
-    server.AddDocument(0, "dog"s, DocumentStatus::ACTUAL, {});
+    ASSERT_EQUAL(documents[0].rating, AverageRating(ratings));
+    ratings = {};
+    server.AddDocument(0, "dog"s, DocumentStatus::ACTUAL, ratings);
     auto documents_with_null_rating = server.FindTopDocuments("dog"s);
-    ASSERT_EQUAL(documents_with_null_rating[0].rating, 0);
-    server.AddDocument(1, "map"s, DocumentStatus::ACTUAL, { 1, 1, 2 });
+    ASSERT_EQUAL(documents_with_null_rating[0].rating, AverageRating(ratings));
+    ratings = { 1, 1, 2 };
+    server.AddDocument(1, "map"s, DocumentStatus::ACTUAL, ratings);
     auto documents3 = server.FindTopDocuments("map"s);
-    ASSERT_EQUAL(documents3[0].rating, 1);
-    server.AddDocument(2, "snake"s, DocumentStatus::ACTUAL, { 1, 1, 0, 1 });
+    ASSERT_EQUAL(documents3[0].rating, AverageRating(ratings));
+    ratings = { 1, 1, 0, 1 };
+    server.AddDocument(2, "snake"s, DocumentStatus::ACTUAL, ratings);
     auto documents4 = server.FindTopDocuments("snake"s);
-    ASSERT_EQUAL(documents4[0].rating, 0);
-    server.AddDocument(3, "country"s, DocumentStatus::ACTUAL, { 1, 2, 1, 1 });
+    ASSERT_EQUAL(documents4[0].rating, AverageRating(ratings));
+    ratings = { 1, 2, 1, 1 };
+    server.AddDocument(3, "country"s, DocumentStatus::ACTUAL, ratings);
     auto documents5 = server.FindTopDocuments("country"s);
-    ASSERT_EQUAL(documents5[0].rating, 1);
+    ASSERT_EQUAL(documents5[0].rating, AverageRating(ratings));
 }
 
 void TestFindTopDocumentsWithUserPredicate() {
     SearchServer server;
-    for (int i = 0; i < 3; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::ACTUAL, { i });
-    }
-    for (int i = 3; i < 6; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::IRRELEVANT, { i });
-    }
-    for (int i = 6; i < 9; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::BANNED, { i });
-    }
-    for (int i = 9; i < 12; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::REMOVED, { i });
-    }
-    vector<Document> expected = { { 2, 0.0, 2 } };
+    server.AddDocument(1, "cat"s, DocumentStatus::ACTUAL, { 1 });
+    server.AddDocument(2, "cat"s, DocumentStatus::ACTUAL, { 2 });
+    server.AddDocument(3, "cat"s, DocumentStatus::IRRELEVANT, { 3 });
+    server.AddDocument(4, "cat"s, DocumentStatus::BANNED, { 4 });
+    vector<Document> expected = {};
     {
-        auto documents = server.FindTopDocuments("cat"s, [](int id, DocumentStatus status, int) {return id > 1 && id < 4 && status == DocumentStatus::ACTUAL; });
+        auto documents = server.FindTopDocuments("cat"s, [](int, DocumentStatus status, int) {return status == DocumentStatus::REMOVED; });
         ASSERT_EQUAL(documents, expected);
     }
-    expected = { {3, 0.0, 3} };
+    server.AddDocument(5, "cat"s, DocumentStatus::REMOVED, { 5 });
+    expected = { {5, 0.0, 5} };
     {
-        auto documents = server.FindTopDocuments("cat"s, [](int id, DocumentStatus status, int) {return id > 1 && id < 4 && status == DocumentStatus::IRRELEVANT; });
+        auto documents = server.FindTopDocuments("cat"s, [](int, DocumentStatus status, int) {return status == DocumentStatus::REMOVED; });
         ASSERT_EQUAL(documents, expected);
     }
-    expected = { {3, 0.0, 3}, {2, 0.0, 2}, {1, 0.0, 1}, {0, 0.0, 0} };
+    expected = { { 2, 0.0, 2 } };
+    {
+        auto documents = server.FindTopDocuments("cat"s, [](int id, DocumentStatus status, int) {return id > 1 && id < 5 && status == DocumentStatus::ACTUAL; });
+        ASSERT_EQUAL(documents, expected);
+    }
+    expected = {};
+    {
+        auto documents = server.FindTopDocuments("cat"s, [](int id, DocumentStatus status, int) {return id > 3 && status == DocumentStatus::ACTUAL; });
+        ASSERT_EQUAL(documents, expected);
+    }
+    expected = { {3, 0.0, 3}, {2, 0.0, 2}, {1, 0.0, 1} };
     {
         auto documents = server.FindTopDocuments("cat"s, [](int, DocumentStatus, int rating) {return rating < 4; });
         ASSERT_EQUAL(documents, expected);
@@ -537,29 +559,33 @@ void TestFindTopDocumentsWithUserPredicate() {
 
 void TestFindTopDocumentsWithSettingStatus() {
     SearchServer server;
-    for (int i = 0; i < 3; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::ACTUAL, { i });
+    server.AddDocument(1, "cat"s, DocumentStatus::ACTUAL, { 1 });
+    server.AddDocument(2, "cat"s, DocumentStatus::ACTUAL, { 2 });
+    server.AddDocument(3, "cat"s, DocumentStatus::IRRELEVANT, { 3 });
+    server.AddDocument(4, "cat"s, DocumentStatus::BANNED, { 4 });
+    vector<Document> expected = {};
+    {
+        auto documents = server.FindTopDocuments("cat"s, DocumentStatus::REMOVED);
+        ASSERT_EQUAL(documents, expected);
     }
-    for (int i = 3; i < 6; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::IRRELEVANT, { i });
+    server.AddDocument(5, "cat"s, DocumentStatus::REMOVED, { 5 });
+    expected = { {5, 0.0, 5} };
+    {
+        auto documents = server.FindTopDocuments("cat"s, DocumentStatus::REMOVED);
+        ASSERT_EQUAL(documents, expected);
     }
-    for (int i = 6; i < 9; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::BANNED, { i });
-    }
-    for (int i = 9; i < 12; ++i) {
-        server.AddDocument(i, "cat"s, DocumentStatus::REMOVED, { i });
-    }
-    vector<Document> expected = { {5, 0.0, 5}, {4, 0.0, 4}, {3, 0.0, 3} };
+    server.AddDocument(6, "cat"s, DocumentStatus::IRRELEVANT, { 6 });
+    expected = { {6, 0.0, 6}, {3, 0.0, 3} };
     {
         auto documents = server.FindTopDocuments("cat"s, DocumentStatus::IRRELEVANT);
         ASSERT_EQUAL(documents, expected);
     }
 }
+
 // Функция TestSearchServer является точкой входа для запуска тестов
 void TestSearchServer() {
     RUN_TEST(TestExcludeStopWordsFromAddedDocumentContent);
     RUN_TEST(TestEmptyDatabase);
-    RUN_TEST(TestFindTopDocumentsRatingSorting);
     RUN_TEST(TestCountDocument);
     RUN_TEST(TestAddDocument);
     RUN_TEST(TestMinusWords);
