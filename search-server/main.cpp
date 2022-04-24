@@ -6,11 +6,13 @@
 #include <utility>
 #include <vector>
 #include <iostream>
+#include <numeric>
 
 using namespace std;
 
 /* Подставьте вашу реализацию класса SearchServer сюда */
 const int MAX_RESULT_DOCUMENT_COUNT = 5;
+const double EPSILON = 1e-6;
 
 string ReadLine() {
     string s;
@@ -87,7 +89,7 @@ public:
 
         sort(matched_documents.begin(), matched_documents.end(),
             [](const Document& lhs, const Document& rhs) {
-                if (abs(lhs.relevance - rhs.relevance) < 1e-6) {
+                if (abs(lhs.relevance - rhs.relevance) < EPSILON) {
                     return lhs.rating > rhs.rating;
                 }
                 else {
@@ -371,8 +373,7 @@ void TestExcludeStopWordsFromAddedDocumentContent() {
 Разместите код остальных тестов здесь
 */
 bool operator==(const Document& lhs, const Document& rhs) {
-    const double epsilon = 1e-6;
-    return lhs.id == rhs.id && lhs.rating == rhs.rating && abs(lhs.relevance - rhs.relevance) < epsilon;
+    return lhs.id == rhs.id && lhs.rating == rhs.rating && abs(lhs.relevance - rhs.relevance) < EPSILON;
 }
 
 ostream& operator<<(ostream& os, const Document& doc) {
@@ -496,11 +497,10 @@ void TestCalculatingRating() {
     vector<int> ratings = { 2, 2, 8, 12 };
     SearchServer server;
     auto AverageRating = [](const vector<int>& ratings) {
-        int result = 0;
-        if (ratings.empty())return result;
-        for (const int i : ratings) result += i;
-        result /= static_cast<int>(ratings.size());
-        return result;
+        if (ratings.empty())return 0;
+        return accumulate(ratings.begin(), ratings.end(), 0) / static_cast<int>(ratings.size());
+        //не юзал accumulate, потому как лень было проверять подключена ли в тестирующей программе библиотека numeric (урок Фреймворк и поисковая система).
+        //оказалась не подключена :)
     };
     server.AddDocument(doc_id, content, DocumentStatus::ACTUAL, ratings);
     auto documents = server.FindTopDocuments("cat"s);
