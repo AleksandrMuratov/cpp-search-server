@@ -115,7 +115,10 @@ public:
     }
 
     int GetDocumentId(int index) const {
-        if (index < 0 || index >= id_documents_.size()) throw out_of_range("");
+        if (index < 0 ||
+            index >= id_documents_.size()) {
+            throw out_of_range("");
+        }
         return id_documents_[index];
     }
 
@@ -161,8 +164,12 @@ private:
         vector<string> words;
         for (const string& word : SplitIntoWords(text)) {
             if (!IsStopWord(word)) {
-                if (IsValidWord(word))words.push_back(word);
-                else throw invalid_argument("Not a valid word"s);
+                if (IsValidWord(word)) {
+                    words.push_back(word);
+                }
+                else {
+                    throw invalid_argument("Not a valid word"s);
+                }
             }
         }
         return words;
@@ -181,7 +188,10 @@ private:
 
     static bool IsValidWord(const string& word) {
         for (const char c : word) {
-            if (c >= '\x0' && c <= '\x1f')return false;
+            if (c >= '\x0' &&
+                c <= '\x1f') {
+                return false;
+            }
         }
         return true;
     }
@@ -195,8 +205,12 @@ private:
         set<string> non_empty_strings;
         for (const string& str : strings) {
             if (!str.empty()) {
-                if (IsValidWord(str)) non_empty_strings.insert(str);
-                else throw invalid_argument("Not a valid word"s);
+                if (IsValidWord(str)) {
+                    non_empty_strings.insert(str);
+                }
+                else {
+                    throw invalid_argument("Not a valid word"s);
+                }
             }
         }
         return non_empty_strings;
@@ -219,8 +233,9 @@ private:
     }
 
     static bool IsValidWord(const QueryWord& query_word) {
-        if (!query_word.data.empty() && query_word.data[0] != '-' && IsValidWord(query_word.data)) return true;
-        return false;
+        return !query_word.data.empty() && 
+               query_word.data[0] != '-' && 
+               IsValidWord(query_word.data);
     }
 
     struct Query {
@@ -232,7 +247,9 @@ private:
         Query query;
         for (const string& word : SplitIntoWords(text)) {
             const QueryWord query_word = ParseQueryWord(word);
-            if (!IsValidWord(query_word)) throw invalid_argument("Not a valid word"s);
+            if (!IsValidWord(query_word)) {
+                throw invalid_argument("Not a valid word"s);
+            }
             if (!query_word.is_stop) {
                 if (query_word.is_minus) {
                     query.minus_words.insert(query_word.data);
