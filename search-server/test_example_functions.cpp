@@ -29,9 +29,7 @@ void MatchDocuments(const SearchServer& search_server, const std::string& query)
     using namespace std::literals;
     try {
         std::cout << "Matching documents on request: "s << query << std::endl;
-        const int document_count = search_server.GetDocumentCount();
-        for (int index = 0; index < document_count; ++index) {
-            const int document_id = search_server.GetDocumentId(index);
+        for (int document_id : search_server) {
             const auto [words, status] = search_server.MatchDocument(query, document_id);
             PrintMatchDocumentResult(document_id, words, status);
         }
