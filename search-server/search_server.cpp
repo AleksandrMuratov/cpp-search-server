@@ -139,36 +139,28 @@ SearchServer::QueryWord SearchServer::ParseQueryWord(std::string_view text) cons
     return { text, is_minus, IsStopWord(text) };
 }
 
-SearchServer::Query SearchServer::ParseQuery(std::string_view text) const {
-    std::set<std::string_view> plus_words, minus_words;
+SearchServer::Query SearchServer::ParseQuery(std::string_view text, bool is_sort_and_unique) const {
+    std::vector<std::string_view> plus_words, minus_words;
     for (std::string_view word : SplitIntoWordsView(text)) {
         const auto query_word = ParseQueryWord(word);
         if (!query_word.is_stop) {
             if (query_word.is_minus) {
-                minus_words.insert(query_word.data);
+                minus_words.push_back(query_word.data);
             }
             else {
-                plus_words.insert(query_word.data);
+                plus_words.push_back(query_word.data);
             }
         }
     }
-    return {std::vector<std::string_view>(plus_words.begin(), plus_words.end()), std::vector<std::string_view>(minus_words.begin(), minus_words.end())};
-}
-
-SearchServer::Query SearchServer::ParseQueryForPolicy(std::string_view text) const {
-    Query result;
-    for (std::string_view word : SplitIntoWordsView(text)) {
-        const auto query_word = ParseQueryWord(word);
-        if (!query_word.is_stop) {
-            if (query_word.is_minus) {
-                result.minus_words.push_back(query_word.data);
-            }
-            else {
-                result.plus_words.push_back(query_word.data);
-            }
-        }
+    if (is_sort_and_unique) {
+        std::sort(plus_words.begin(), plus_words.end());
+        auto it_end_for_plus_words = std::unique(plus_words.begin(), plus_words.end());
+        plus_words.resize(it_end_for_plus_words - plus_words.begin());
+        std::sort(minus_words.begin(), minus_words.end());
+        auto it_end_for_minus_words = std::unique(minus_words.begin(), minus_words.end());
+        minus_words.resize(it_end_for_minus_words - minus_words.begin());
     }
-    return result;
+    return {move(plus_words), move(minus_words)};
 }
 
 double SearchServer::ComputeWordInverseDocumentFreq(std::string_view word) const {

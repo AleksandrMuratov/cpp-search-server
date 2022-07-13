@@ -16,18 +16,18 @@ public:
         Value& ref_to_value;
     };
 
-    explicit ConcurrentMap(size_t bucket_count) : mutexes_(bucket_count), maps_(bucket_count), bucket_count_(bucket_count) {}
+    explicit ConcurrentMap(size_t bucket_count) : buckets_(bucket_count) {}
 
     Access operator[](const Key& key) {
-        size_t index = key % bucket_count_;
-        return { std::lock_guard<std::mutex>(mutexes_[index]), maps_[index][key] };
+        auto& bucket = buckets_[key % buckets_.size()];
+        return { std::lock_guard<std::mutex>(bucket.mutex_), bucket.map_[key] };
     }
 
     std::map<Key, Value> BuildOrdinaryMap() {
         std::map<Key, Value> result;
-        for (size_t i = 0; i < mutexes_.size(); ++i) {
-            std::lock_guard<std::mutex> g(mutexes_[i]);
-            for (auto& [key, value] : maps_[i]) {
+        for (auto& bucket : buckets_) {
+            std::lock_guard<std::mutex> g(bucket.mutex_);
+            for (auto& [key, value] : bucket.map_) {
                 result[key] += value;
             }
         }
@@ -35,13 +35,15 @@ public:
     }
 
     void Erase(const Key& key) {
-        size_t index = key % bucket_count_;
-        std::lock_guard<std::mutex> g(mutexes_[index]);
-        maps_[index].erase(key);
+        auto& bucket = buckets_[key % buckets_.size()];
+        std::lock_guard<std::mutex> g(bucket.mutex_);
+        bucket.map_.erase(key);
     }
 
 private:
-    std::vector<std::mutex> mutexes_;
-    std::vector<std::map<Key, Value>> maps_;
-    const size_t bucket_count_;
+    struct Bucket {
+        std::mutex mutex_;
+        std::map<Key, Value> map_;
+    };
+    std::vector<Bucket> buckets_;
 };
