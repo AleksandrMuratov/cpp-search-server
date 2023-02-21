@@ -12,6 +12,7 @@
 #include <functional>
 #include <type_traits>
 #include <thread>
+
 #include "string_processing.h"
 #include "document.h"
 #include "log_duration.h"
@@ -113,9 +114,6 @@ private:
     std::vector<Document> FindAllDocuments(ExecutionPolicy&&, const Query& query, DocumentPredicate document_predicate) const;
 };
 
-
-
-
 template <typename StringContainer>
 SearchServer::SearchServer(const StringContainer& stop_words)
     : stop_words_(MakeUniqueNonEmptyStrings(stop_words))  // Extract non-empty stop words
@@ -128,23 +126,7 @@ SearchServer::SearchServer(const StringContainer& stop_words)
 
 template <typename DocumentPredicate>
 std::vector<Document> SearchServer::FindTopDocuments(std::string_view raw_query, DocumentPredicate document_predicate) const {
-    const auto query = ParseQuery(raw_query);
-
-    auto matched_documents = FindAllDocuments(query, document_predicate);
-
-    std::sort(matched_documents.begin(), matched_documents.end(), [](const Document& lhs, const Document& rhs) {
-        if (std::abs(lhs.relevance - rhs.relevance) < EPSILON) {
-            return lhs.rating > rhs.rating;
-        }
-        else {
-            return lhs.relevance > rhs.relevance;
-        }
-        });
-    if (matched_documents.size() > MAX_RESULT_DOCUMENT_COUNT) {
-        matched_documents.resize(MAX_RESULT_DOCUMENT_COUNT);
-    }
-
-    return matched_documents;
+    return FindTopDocuments(std::execution::seq, std::move(raw_query), document_predicate);
 }
 
 template<typename ExecutionPolicy, typename DocumentPredicate>
