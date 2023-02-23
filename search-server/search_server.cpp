@@ -95,7 +95,6 @@ bool SearchServer::IsStopWord(std::string_view word) const {
 }
 
 bool SearchServer::IsValidWord(std::string_view word) {
-    // A valid word must not contain special characters
     return std::none_of(word.begin(), word.end(), [](char c) {
         return c >= '\0' && c < ' ';
         });

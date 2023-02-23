@@ -104,7 +104,6 @@ private:
 
     Query ParseQuery(std::string_view text, bool is_sort_and_unique = true) const;
 
-    // Existence required
     double ComputeWordInverseDocumentFreq(std::string_view word) const;
 
     template <typename DocumentPredicate>
@@ -116,7 +115,7 @@ private:
 
 template <typename StringContainer>
 SearchServer::SearchServer(const StringContainer& stop_words)
-    : stop_words_(MakeUniqueNonEmptyStrings(stop_words))  // Extract non-empty stop words
+    : stop_words_(MakeUniqueNonEmptyStrings(stop_words))
 {
     using namespace std::literals;
     if (!std::all_of(stop_words_.begin(), stop_words_.end(), IsValidWord)) {
